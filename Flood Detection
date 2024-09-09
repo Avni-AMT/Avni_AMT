@@ -1,0 +1,73 @@
+//Flood detection project using Sentinel 1
+// Choose a study area which is already affected by flood
+//Import Study area
+var State = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+.filter(ee.Filter.eq('ADM1_NAME', 'Assam' ));
+Map.addLayer(State);
+Map.centerObject(State, 7);
+//Area of region in SqKm.
+print('Total state Area (Sqkm)', State .geometry().area().divide(1000000).round())
+//spectle
+function speckel(img){
+  return img.focalMedian(30, 'square', 'meters')
+  .copyProperties(img, img.propertyNames())
+  }
+//Import Sentinel 1 Before Flood
+var Before_Flood = ee.ImageCollection("COPERNICUS/S1_GRD")
+.filter(ee.Filter.date('2022-01-01', '2022-01-30'))
+.filter(ee.Filter.bounds(State))
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+.filter(ee.Filter.eq('instrumentMode', 'IW'))
+.select('VV')
+.map(speckel)
+.median()
+.clip(State);
+Map.addLayer(Before_Flood,{ min: -25, max: 1 }, 'Before_Flood');
+//Import Sentinel 1 for After Flood
+var After_Flood = ee.ImageCollection("COPERNICUS/S1_GRD")
+.filter(ee.Filter.date('2022-05-13', '2022-05-31'))
+.filter(ee.Filter.bounds(State))
+.filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+.filter(ee.Filter.eq('instrumentMode', 'IW'))
+.select('VV')
+.map(speckel)
+.median()
+.clip(State);
+Map.addLayer(After_Flood, { min: -25, max: 1 }, 'After_Flood');
+
+//Flood Extend
+var flood = Before_Flood.gt(-20).and(After_Flood.lt(-20));
+var flood_mask = flood.updateMask(flood.eq(1));
+Map.addLayer(flood_mask, {palette : ['red']}, 'Flood Extend');
+
+//Water Mask
+var water = Before_Flood.lt(-20).and(After_Flood.lt(-20));
+var water_mask = water.updateMask(water.eq(1));
+Map.addLayer(water_mask, {palette : ['yellow']}, 'Water Mask');
+
+//Flood area calculation
+var flood_area = flood_mask.multiply(ee.Image.pixelArea().divide(1e6));
+var area_sum = flood_area.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: State, 
+  scale: 10,
+  maxPixels: 1e8,
+  bestEffort: true,
+  }).values().get(0);
+  
+print('Flooded Area',ee.Number(area_sum).round());
+
+//Export Raster Image
+Export.image.toDrive ({
+  image : flood_mask,
+  description : 'Flood in ASSAM',
+  fileFormat : 'GeoTIFF',
+  maxPixels : 1e8,
+  region : State,
+});
+//Export Vector File
+Export.table.toDrive ({
+  collection : State,
+  description : "Assam",
+  fileFormat : 'KML',
+});
