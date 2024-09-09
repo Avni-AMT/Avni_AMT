@@ -1,0 +1,98 @@
+// Import Study area
+var State = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+  .filter(ee.Filter.eq('ADM1_NAME', 'Assam' ));
+Map.addLayer(State, {}, 'Assam');
+Map.centerObject(State, 7);
+
+// Define the time period
+var startDate = '2022-01-01';
+var endDate = '2022-12-31';
+
+// Load and filter the CHIRPS precipitation dataset
+var chirps = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+  .filterDate(startDate, endDate)
+  .filterBounds(State)
+  .mean()
+  .clip(State);
+Map.addLayer(chirps, {min: 1.5, max : 11.5, palette: ['blue', 'green', 'yellow', 'orange', 'red']}, 'CHIRPS Precipitation');
+
+// Load and filter the Soil Moisture dataset (SMAP)
+var smap = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/006")
+  .filterDate(startDate, endDate)
+  .filterBounds(State)
+  .mean()
+  .select('soil_moisture_pm')  // Select the surface soil moisture band
+  .clip(State);
+Map.addLayer(smap, {min: 0.2, max: 0.5, palette: ['red', 'yellow', 'green']}, 'SMAP Soil Moisture');
+
+// Load and filter the MODIS NDVI dataset
+var ndvi = ee.ImageCollection('MODIS/006/MOD13A2')
+  .filterDate(startDate, endDate)
+  .filterBounds(State)
+  .mean()
+  .select('NDVI')  // Select the NDVI band
+  .clip(State);
+var ndviVis = {min: 0, max: 9000, palette: ['white', 'green']};
+Map.addLayer(ndvi, ndviVis, 'MODIS NDVI');
+
+// Load and filter the MODIS Land Surface Temperature dataset
+var lst = ee.ImageCollection('MODIS/006/MOD11A2')
+  .filterDate(startDate, endDate)
+  .filterBounds(State)
+  .mean()
+  .select('LST_Day_1km')  // Select the daytime land surface temperature band
+  .clip(State);
+var lstVis = {min: 14695.54548611111, max: 15083.159375, palette: ['blue', 'green', 'red']};
+Map.addLayer(lst, lstVis, 'MODIS Land Surface Temperature');
+
+// Calculate drought index: Standardized Precipitation Index (SPI)
+var precipStats = chirps.reduceRegion({
+  reducer: ee.Reducer.mean().combine({
+    reducer2: ee.Reducer.stdDev(),
+    sharedInputs: true
+  }),
+  geometry: State,
+  scale: 5000
+});
+
+var Pmean = ee.Number(precipStats.get('precipitation_mean'));
+var Pstd = ee.Number(precipStats.get('precipitation_stdDev'));
+
+var spi = chirps.subtract(Pmean).divide(Pstd);
+Map.addLayer(spi, {min: -2, max: 2, palette: ['red', 'white', 'blue']}, 'SPI');
+//Mitigation measures 
+// Simulate improved irrigation efficiency by increasing soil moisture by 10%
+var smapImproved = smap.multiply(1.1);
+Map.addLayer(smapImproved, {min: 0.2, max: 0.5, palette: ['red', 'yellow', 'green']}, 'Improved SMAP Soil Moisture');
+// Export results
+Export.image.toDrive({
+  image: chirps,
+  description: 'CHIRPS_Precipitation_2020',
+  scale: 5000,
+  region: State.geometry(),
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: smap,
+  description: 'SMAP_SoilMoisture_2020',
+  scale: 5000,
+  region: State.geometry(),
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: ndvi,
+  description: 'MODIS_NDVI_2020',
+  scale: 5000,
+  region: State.geometry(),
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: lst,
+  description: 'MODIS_LST_2020',
+  scale: 5000,
+  region: State.geometry(),
+  fileFormat: 'GeoTIFF'
+});
