@@ -1,0 +1,89 @@
+//This is Avni from Alpha Map Tech 
+//for any queries contact avni22911119@gmail.com
+//Welcome to GEE Session on Real Time Flood Monitoring
+
+// Import the study area
+var State = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+  .filter(ee.Filter.eq('ADM1_NAME', 'Assam'));
+Map.addLayer(State);
+Map.centerObject(State, 7);
+
+// Area of region in SqKm
+print('Total state Area (Sqkm)', State.geometry().area().divide(1000000).round());
+
+// Speckle reduction function
+function speckel(img) {
+  return img.focalMedian(30, 'square', 'meters')
+    .copyProperties(img, img.propertyNames());
+}
+
+// Get the most recent date
+var today = ee.Date(new Date());
+var beforeDate = today.advance(-30, 'day');  // 30 days before today
+
+// Import Sentinel-1 Before Flood (30-60 days ago)
+var Before_Flood = ee.ImageCollection("COPERNICUS/S1_GRD")
+  .filter(ee.Filter.date(beforeDate.advance(-30, 'day'), beforeDate))
+  .filter(ee.Filter.bounds(State))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+  .filter(ee.Filter.eq('instrumentMode', 'IW'))
+  .select('VV')
+  .map(speckel)
+  .median()
+  .clip(State);
+Map.addLayer(Before_Flood, {min: -25, max: 0}, 'Before_Flood');
+
+// Import Sentinel-1 for After Flood (last 30 days)
+var After_Flood = ee.ImageCollection("COPERNICUS/S1_GRD")
+  .filter(ee.Filter.date(beforeDate, today))
+  .filter(ee.Filter.bounds(State))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+  .filter(ee.Filter.eq('instrumentMode', 'IW'))
+  .select('VV')
+  .map(speckel)
+  .median()
+  .clip(State);
+Map.addLayer(After_Flood, {min: -25, max: 0}, 'After_Flood');
+
+// Dynamic threshold adjustment based on histogram
+var hist = After_Flood.reduceRegion({
+  reducer: ee.Reducer.histogram(),
+  geometry: State,
+  scale: 30,
+  maxPixels: 1e9
+});
+print(hist);
+
+// Calculate threshold dynamically (mean - std dev)
+var stats = After_Flood.reduceRegion({
+  reducer: ee.Reducer.mean().combine(ee.Reducer.stdDev(), '', true),
+  geometry: State,
+  scale: 30,
+  maxPixels: 1e9
+});
+var mean = ee.Number(stats.get('VV_mean'));
+var stdDev = ee.Number(stats.get('VV_stdDev'));
+var dynamicThreshold = mean.subtract(stdDev);
+print('Dynamic Threshold:', dynamicThreshold);
+
+// Changes
+var change = After_Flood.subtract(Before_Flood).rename('flood');
+Map.addLayer(change.clip(State), {min: -10, max: 10, palette: ['blue', 'white', 'red']}, 'Flood Change');
+
+// Flood Extend
+var flood = Before_Flood.gt(dynamicThreshold).and(After_Flood.lt(dynamicThreshold));
+var flood_mask = flood.updateMask(flood.eq(1));
+Map.addLayer(flood_mask, {palette: ['red']}, 'Flood Extent');
+
+// Water Mask
+var water = Before_Flood.lt(dynamicThreshold).and(After_Flood.lt(dynamicThreshold));
+var water_mask = water.updateMask(water.eq(1));
+Map.addLayer(water_mask, {palette: ['yellow']}, 'Water Mask');
+
+// Legend
+var legend = ui.Panel({style: {position: 'bottom-left'}});
+var floodLabel = ui.Label('Flood Extent', {margin: '4px 8px', fontSize: '12px', backgroundColor: 'red', color: 'white'});
+var waterLabel = ui.Label('Water Mask', {margin: '4px 8px', fontSize: '12px', backgroundColor: 'yellow', color: 'black'});
+legend.add(floodLabel);
+legend.add(waterLabel);
+Map.add(legend);
