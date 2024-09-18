@@ -1,0 +1,173 @@
+//welcome to GEE Session For Afforestation and Deforestation Map of Western Ghats from 2000 to 2024
+// Define the country feature collection
+var Country = ee.FeatureCollection('users/vikashnikannan/westernghats');
+Map.addLayer(Country);
+Map.centerObject(Country, 6);
+
+// Area of region in hectare
+print('Total state Area (hectare)', Country.geometry().area().divide(10000).round());
+
+// Define function to mask clouds in Landsat 5 images
+function maskCloudsL5(image) {
+  var cloudMask = image.select('SR_CLOUD_QA').bitwiseAnd(1 << 1).neq(0); // Cloud mask bit in SR_CLOUD_QA
+  return image.updateMask(cloudMask.not());
+}
+
+// Get and process Landsat 5 image collection
+var landsat_5 = ee.ImageCollection("LANDSAT/LT05/C02/T1_L2")
+  .filter(ee.Filter.lt('CLOUD_COVER', 10))
+  .filter(ee.Filter.date('1997-01-01', '2000-12-31'))
+  .filter(ee.Filter.bounds(Country))
+  .map(maskCloudsL5) // Apply cloud masking
+  .median()
+  .clip(Country);
+
+// Visualization parameters for Landsat 5
+var landsat_image5 = {
+  min: 5000,
+  max: 15000,
+  bands: ['SR_B3', 'SR_B2', 'SR_B1']
+};
+Map.addLayer(landsat_5, landsat_image5, 'landsat5');
+
+// Define function to mask clouds in Landsat 8 images
+function maskCloudsL8(image) {
+  var cloudMask = image.select('QA_PIXEL').bitwiseAnd(1 << 5).neq(0); // Cloud mask bit in QA_PIXEL
+  return image.updateMask(cloudMask.not());
+}
+
+// Get and process Landsat 8 image collection
+var landsat_8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+  .filter(ee.Filter.lt('CLOUD_COVER', 10))
+  .filter(ee.Filter.date('2024-01-01', '2024-06-06'))
+  .filter(ee.Filter.bounds(Country))
+  .map(maskCloudsL8) // Apply cloud masking
+  .median()
+  .clip(Country);
+
+// Visualization parameters for Landsat 8
+var landsat_image8 = {
+  min: 5000,
+  max: 15000,
+  bands: ['SR_B4', 'SR_B3', 'SR_B2'],
+};
+Map.addLayer(landsat_8, landsat_image8, 'landsat8', false);
+
+// Calculate NDVI for Landsat 5
+var NDVI_88 = landsat_5.normalizedDifference(['SR_B4', 'SR_B3']);
+Map.addLayer(NDVI_88, {min: 0.0, max: 0.8, palette: ['white', 'green', 'blue']}, 'NDVI 1988');
+
+// Calculate NDVI for Landsat 8
+var NDVI_24 = landsat_8.normalizedDifference(['SR_B5', 'SR_B4']);
+Map.addLayer(NDVI_24, {min: 0.0, max: 0.8, palette: ['white', 'green', 'blue']}, 'NDVI 2024');
+
+// Calculate NDVI difference between 2024 and 1988
+var NDVI_diff = NDVI_88.subtract(NDVI_24);
+Map.addLayer(NDVI_diff, {min: -1, max: 1, palette: ['white', 'yellow', 'black']}, 'NDVI Difference');
+
+// Visualize afforestation and deforestation
+var deforest = NDVI_diff.gt(0.1);
+var deforestation = deforest.updateMask(deforest.eq(1));
+Map.addLayer(deforestation, {palette: ['red']}, 'deforestation');
+
+var afforest = NDVI_diff.lt(-0.1);
+var afforestation = afforest.updateMask(afforest.eq(1));
+Map.addLayer(afforestation, {palette: ['green']}, 'afforestation');
+
+// Calculate area of afforestation and deforestation
+var pixelArea = ee.Image.pixelArea().divide(10000); // Convert to hectare
+
+var afforestationArea = afforestation.multiply(pixelArea).reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: Country,
+  scale: 30,
+  maxPixels: 1e12
+}).values().get(0);
+print('Afforestation Area (hectare)', ee.Number(afforestationArea).round());
+
+var deforestationArea = deforestation.multiply(pixelArea).reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: Country,
+  scale: 30,
+  maxPixels: 1e12
+}).values().get(0);
+print('Deforestation Area (hectare)', ee.Number(deforestationArea).round());
+
+// Add a legend
+var legend = ui.Panel({style: {position: 'bottom-left'}});
+legend.add(ui.Label('Legend', {fontWeight: 'bold'}));
+legend.add(ui.Label('Deforestation', {backgroundColor: 'red', padding: '8px', margin: '4px'}));
+legend.add(ui.Label('Afforestation', {backgroundColor: 'green', padding: '8px', margin: '4px'}));
+Map.add(legend);
+
+// Set position of panel
+var title = ui.Panel({
+  style: {
+    position: 'top-center',
+    padding: '8px 15px'
+  }
+});
+
+// Create legend title
+var mapTitle = ui.Label({
+  value: 'Afforestation and Deforestation Map of Western Ghats from 2000 to 2024',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '18px',
+    margin: '0 0 4px 0',
+    padding: '0'
+  }
+});
+ 
+// Add the title to the panel
+title.add(mapTitle);
+Map.add(title);
+
+//Export Raster Image Deforestration
+Export.image.toDrive ({
+  image : deforestation,
+  description : 'deforestation of Western Ghats from 2000 to 2024',
+  fileFormat : 'GeoTIFF',
+  maxPixels : 1e12,
+  region : Country,
+});
+//Export Raster Image Aforestration
+Export.image.toDrive ({
+  image : afforestation,
+  description : 'afforestation of Western Ghats from 2000 to 2024',
+  fileFormat : 'GeoTIFF',
+  maxPixels : 1e12,
+  region : Country,
+});
+//Export Raster Image NDVI 
+Export.image.toDrive ({
+  image : NDVI_88,
+  description : 'NDVI_88 of Western Ghats  2000',
+  fileFormat : 'GeoTIFF',
+  maxPixels : 1e12,
+  region : Country,
+});
+//Export Raster Image NDVI 
+Export.image.toDrive ({
+  image : NDVI_24,
+  description : 'NDVI_24 of Western Ghats  2024',
+  fileFormat : 'GeoTIFF',
+  maxPixels : 1e12,
+  region : Country,
+});
+//Export Raster Image landsat 5 
+Export.image.toDrive ({
+  image : landsat_5,
+  description : 'landsat_5 of Western Ghats  2024',
+  fileFormat : 'GeoTIFF',
+  maxPixels : 1e12,
+  region : Country,
+});
+//Export Raster Image landsat 8 
+Export.image.toDrive ({
+  image : landsat_8,
+  description : 'landsat_8 of Western Ghats  2024',
+  fileFormat : 'GeoTIFF',
+  maxPixels : 1e12,
+  region : Country,
+});
