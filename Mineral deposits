@@ -1,0 +1,91 @@
+//This is Avni from Alpha Map Tech 
+//for any queries contact avni22911119@gmail.com
+//Welcome to GEE Session for potential mineral locations
+
+// Import Study area
+var Country = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+  .filter(ee.Filter.eq('ADM2_NAME', 'Kolar'));
+
+// Visualize Map
+Map.addLayer(Country);
+// Zoom to study area
+Map.centerObject(Country, 8);
+
+// Calculate total area in Sqkm
+print('Total state Area (Sqkm)', Country.geometry().area().divide(1000000).round());
+
+// Import Satellite Image
+var Sentinel = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+  .filter(ee.Filter.date('2023-01-01', '2023-12-31'))
+  .filter(ee.Filter.bounds(Country))
+  .median()
+  .clip(Country);
+
+// Visualization
+var Visualization = {
+  bands: ['B8', 'B4', 'B3'],
+  min: 0.0,
+  max: 2000
+};
+Map.addLayer(Sentinel, Visualization, 'False Color');
+
+// Spectral Indices
+// Normalized Difference Vegetation Index (NDVI)
+var NDVI = Sentinel.normalizedDifference(['B8', 'B4']);
+var NDVI_Visualise = {
+  min: 0.0,
+  max: 0.8,
+  palette: ['white', 'green']
+};
+Map.addLayer(NDVI, NDVI_Visualise, 'NDVI');
+
+// Normalized Difference Water Index (NDWI)
+var NDWI = Sentinel.normalizedDifference(['B3', 'B8']).rename('NDWI');
+Map.addLayer(NDWI, {min: -1, max: 1, palette: ['white', 'blue']}, 'NDWI');
+
+// Normalized Difference Soil Index (NDSI)
+var NDSI = Sentinel.normalizedDifference(['B11', 'B8']).rename('NDSI');
+Map.addLayer(NDSI, {min: -1, max: 1, palette: ['blue', 'white', 'red']}, 'NDSI');
+
+// Threshold values for mineral identification (these are example values and may need to be adjusted)
+var ironOreMask = NDVI.lt(0.2).and(NDWI.lt(0.0));
+var magnesiteMask = NDWI.gt(0.2);
+var bauxiteMask = NDSI.gt(0.3);
+var limestoneMask = NDVI.lt(0.1);
+
+// Visualize potential mineral locations
+Map.addLayer(ironOreMask.updateMask(ironOreMask), {palette: ['red']}, 'Iron Ore');
+Map.addLayer(magnesiteMask.updateMask(magnesiteMask), {palette: ['blue']}, 'Magnesite');
+Map.addLayer(bauxiteMask.updateMask(bauxiteMask), {palette: ['green']}, 'Bauxite');
+Map.addLayer(limestoneMask.updateMask(limestoneMask), {palette: ['yellow']}, 'Limestone');
+
+// Print mineral counts
+print('Iron Ore count:', ironOreMask.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: Country,
+  scale: 10,
+  maxPixels: 1e9,
+  bestEffort: true
+}));
+print('Magnesite count:', magnesiteMask.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: Country,
+  scale: 10,
+  maxPixels: 1e9,
+  bestEffort: true
+}));
+print('Bauxite count:', bauxiteMask.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: Country,
+  scale: 10,
+  maxPixels: 1e9,
+  bestEffort: true
+}));
+print('Limestone count:', limestoneMask.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: Country,
+  scale: 10,
+  maxPixels: 1e9,
+  bestEffort: true
+}));
