@@ -1,0 +1,132 @@
+//This is Avni here for any queries contact avni22911119@gmail.com
+//Welcome to GEE Session of Drought Factors
+//Import Study area
+var State = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+.filter(ee.Filter.eq('ADM1_NAME', 'Assam' ));
+Map.addLayer(State);
+Map.centerObject(State, 7);
+
+//To analyze factors leading to frequent drought using Google Earth Engine
+// Precipitation- Rainfall
+var Precipitation = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+.filterDate('2023-01-01', '2023-12-31')
+.mean()
+.clip(State);
+// Precipitation Visualization - Rainfall
+var Precipitation_Visualization =  {
+min :1,
+max : 10, 
+palette : ['blue', 'green','yellow','orange', 'red']
+};
+Map.addLayer(Precipitation, Precipitation_Visualization, 'Precipitation');
+
+//temperature
+var Temperature = ee.ImageCollection('NASA/GLDAS/V021/NOAH/G025/T3H')
+.filterDate('2023-01-01', '2023-12-31')
+.select('Tair_f_inst')
+.mean()
+.clip(State);
+// Temperature Visualization 
+var Temperature_Visualization =  {
+min : 290,
+max : 300, 
+palette : ['blue','white', 'yellow', 'red']
+};
+Map.addLayer(Temperature, Temperature_Visualization, 'Temperature');
+
+
+//Soil Moisture
+var soil_Moisture =ee.ImageCollection("NASA/SMAP/SPL3SMP_E/006")
+.filterDate('2023-01-01', '2023-12-31')
+.select('soil_moisture_pm')
+.mean()
+.clip(State);
+// Soil Moisture Visualization 
+var soil_Moisture_Visualization =  {
+  min: 0.2,
+  max : 0.5,
+  palette :['red', 'yellow', 'green']
+};
+Map.addLayer(soil_Moisture, soil_Moisture_Visualization, 'soil_Moisture');
+
+//NDVI
+var vegetation = ee.ImageCollection("MODIS/061/MOD13Q1")
+.filterDate('2023-01-01', '2023-12-31')
+.select('NDVI')
+.mean()
+.clip(State);
+//NDVI Visualize
+var NDVI_Visualise = {
+min: -2000,
+max: 10000,
+palette: ['white', 'green']
+};
+Map.addLayer(vegetation, NDVI_Visualise, 'NDVI');
+
+// Slope 
+var dataset = ee.Image('CGIAR/SRTM90_V4')
+.select('elevation');
+var slope = ee.Terrain.slope(dataset)
+.clip(State);
+//Color represent the low slope to high slope
+Map.addLayer(slope, {min: 0, max: 60, palette :['green', 'yellow', 'red', 'white']}, 'slope');
+
+
+// Load and filter the MODIS Land Surface Temperature dataset
+var lst = ee.ImageCollection("MODIS/061/MOD11A1")
+.filterDate('2023-01-01', '2023-12-31')
+.filterBounds(State)
+.mean()
+.select('LST_Day_1km')  // Select the daytime land surface temperature band
+.clip(State);
+var lstVis = {min: 14695.54548611111, max: 15083.159375, palette: ['blue', 'green', 'red']};
+Map.addLayer(lst, lstVis, 'MODIS Land Surface Temperature');
+
+// Calculate drought index: Standardized Precipitation Index (SPI)
+var precipStats = Precipitation.reduceRegion({  // ReduceRegion Function: calculates statistics
+reducer: ee.Reducer.mean().combine({
+  reducer2: ee.Reducer.stdDev(),
+  sharedInputs: true
+  }),
+  geometry: State,
+  scale: 5000
+});
+
+var Pmean = ee.Number(precipStats.get('precipitation_mean'));
+var Pstd = ee.Number(precipStats.get('precipitation_stdDev'));
+
+var spi = Precipitation.subtract(Pmean).divide(Pstd);
+Map.addLayer(spi, {min: -2, max: 2, palette: ['red', 'white', 'blue']}, 'SPI');
+
+// Export results
+Export.image.toDrive({
+  image: Precipitation,
+  description: 'CHIRPS_Precipitation_2023',
+  scale: 5000,
+  region: State.geometry(),
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: soil_Moisture,
+  description: 'SMAP_SoilMoisture_2023',
+  scale: 5000,
+  region: State.geometry(),
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: vegetation,
+  description: 'MODIS_NDVI_2023',
+  scale: 5000,
+  region: State.geometry(),
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: lst,
+  description: 'MODIS_LST_2023',
+  scale: 5000,
+  region: State.geometry(),
+  fileFormat: 'GeoTIFF'
+});
