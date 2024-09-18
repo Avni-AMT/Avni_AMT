@@ -1,0 +1,51 @@
+This is Avni from Alpha Map tech
+//Welcome to GEE session on Average_NO2 Map from 2019 - 2024
+// Import study area for Chennai
+var chennai = ee.FeatureCollection("users/avni/Chennai");
+Map.addLayer(chennai, {}, 'study area')
+
+// Define a function to calculate the average NO2 for a specific year
+var calculateYearlyAverage = function(year) {
+  var startDate = ee.Date.fromYMD(year, 1, 1);
+  var endDate = ee.Date.fromYMD(year, 12, 31);
+  
+  var NO2 = ee.ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")
+    .select('NO2_column_number_density')
+    .filterDate(startDate, endDate)
+    .mean()
+    .clip(chennai);
+  
+  return NO2.set('year', year);
+};
+
+// Calculate the average NO2 for each year
+var years = [2019, 2020, 2021, 2022, 2023, 2024];
+var NO2Collection = ee.ImageCollection.fromImages(
+  years.map(calculateYearlyAverage)
+);
+
+// Visualization parameters for NO2
+var visu = {
+  min: 0.00007411011829895198,
+  max: 0.00010464394065874223,
+  palette: ['black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red']
+};
+
+// Add each year's NO2 data to the map
+years.forEach(function(year) {
+  var NO2Image = NO2Collection.filter(ee.Filter.eq('year', year)).first();
+  Map.addLayer(NO2Image, visu, 'Average NO2 ' + year);
+  
+  // Export the image to Google Drive
+  Export.image.toDrive({
+    image: NO2Image,
+    description: 'Average_NO2_' + year,
+    folder: 'NO2_Maps',
+    fileNamePrefix: 'Average_NO2_' + year,
+    scale: 1000, // Adjust scale as necessary
+    region: chennai.geometry().bounds() // Set the export region to the bounds of Chennai
+  });
+});
+
+// Center the map on Chennai
+Map.centerObject(chennai, 10);
