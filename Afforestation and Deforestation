@@ -1,6 +1,8 @@
+// This is Avni from Alpha Map Tech
 //welcome to GEE Session For Afforestation and Deforestation Map of Western Ghats from 2000 to 2024
+
 // Define the country feature collection
-var Country = ee.FeatureCollection('users/vikashnikannan/westernghats');
+var Country = ee.FeatureCollection('users/avni/westernghats');
 Map.addLayer(Country);
 Map.centerObject(Country, 6);
 
