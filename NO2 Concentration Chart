@@ -68,6 +68,80 @@ years.forEach(function(year) {
   print(chart);
 });
 
+
+//Weekly Mean NO₂ Concentration in Chennai (Jan - Jul 2024)
+// Import study area for Chennai
+var chennai = ee.FeatureCollection("FAO/GAUL/2015/level2")
+  .filter(ee.Filter.eq('ADM2_NAME', 'Chennai'));
+
+// Add Chennai boundary to the map
+Map.addLayer(chennai, {}, 'Chennai Boundary');
+
+// Define a function to calculate the weekly mean NO2 for a specific year and date range
+var calculateWeeklyMean = function(year, startMonth, endMonth) {
+  var startDate = ee.Date.fromYMD(year, startMonth, 1);
+  var endDate = ee.Date.fromYMD(year, endMonth, 1).advance(1, 'month'); // end of endMonth
+
+  var NO2 = ee.ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")
+    .select('NO2_column_number_density')
+    .filterDate(startDate, endDate);
+
+  var weeklyMeanNO2 = ee.ImageCollection.fromImages(
+    ee.List.sequence(0, endDate.difference(startDate, 'week').subtract(1)).map(function(week) {
+      var startWeek = startDate.advance(week, 'week');
+      var endWeek = startWeek.advance(1, 'week');
+
+      var weeklyNO2 = NO2.filterDate(startWeek, endWeek)
+                         .mean()
+                         .set('system:time_start', startWeek.millis())
+                         .set('week', week + 1)
+                         .set('year', year);
+      return weeklyNO2;
+    })
+  ).map(function(image) {
+    var meanDictionary = image.reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: chennai,
+      scale: 1000,
+      bestEffort: true
+    });
+
+    var mean = meanDictionary.get('NO2_column_number_density');
+    
+    // Only include the feature if 'NO2_column_number_density' is present
+    return ee.Algorithms.If(mean, ee.Feature(null, {
+      date: ee.Date(image.get('system:time_start')).format('YYYY-MM-dd'),
+      mean: mean
+    }), null);
+  }).filter(ee.Filter.notNull(['mean']));
+
+  return ee.FeatureCollection(weeklyMeanNO2);
+};
+
+// Define the start and end month for the date range (January to July 2024)
+var startMonth = 1; // January
+var endMonth = 7;   // July
+
+// Calculate weekly mean NO2 for the defined range in 2024
+var weeklyMeanNO2Collection = calculateWeeklyMean(2024, startMonth, endMonth);
+
+// Create a time series chart of the weekly NO2 mean
+var chart = ui.Chart.feature.byFeature(weeklyMeanNO2Collection, 'date', 'mean')
+  .setOptions({
+    title: 'Weekly Mean NO₂ Concentration in Chennai (Jan - Jul 2024)',
+    hAxis: {title: 'Date', format: 'MMM dd, yyyy'},
+    vAxis: {title: 'NO₂ Concentration (mol/m²)'},
+    lineWidth: 1,
+    pointSize: 3
+  });
+
+// Print the chart to the console
+print(chart);
+
+// Set the map center to Chennai
+Map.setCenter(80.27, 13.08, 10);
+
+
 // Set the map center to Chennai
 Map.setCenter(80.27, 13.08, 10);
 
