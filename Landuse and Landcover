@@ -1,0 +1,61 @@
+//This is Avni from  Alpha Map Tech
+//welcome to GEE session for Landuse and Landcover for Dindugal 2024
+//Import Shapefile
+
+Map.addLayer(table);
+Map.centerObject(table,10);
+
+
+var rgbVis = {bands: ["SR_B4","SR_B3","SR_B2"], min:0, max:6553};
+var nirVis = {bands: ["SR_B5","SR_B4","SR_B3"], min:0, max:6553};
+
+var imageCollectionimage = (imageCollection.filterBounds(table).filterDate('2024-03-01','2024-03-30')
+                 .filter(ee.Filter.lt('CLOUD_COVER',10))
+                 .median()).clip(table);
+
+
+
+
+Map.addLayer(imageCollectionimage, rgbVis, "True colour image Dindugal");
+Map.addLayer(imageCollectionimage, nirVis, "False colour image Dindugal");
+
+var training = water.merge(cropland).merge(buildup).merge(shrubland).merge(forest).merge(fallowland).merge(barrenland);
+print (training);
+
+var label = 'class';
+var bands =["SR_B2","SR_B3","SR_B4","SR_B5"];
+var input =imageCollectionimage.select(bands);
+
+var trainImage=input.sampleRegions({
+  collection: training,
+  properties:[label],
+  scale:10
+});
+
+
+var trainingData =  trainImage.randomColumn();
+var trainSet = trainingData.filter(ee.Filter.lessThan('random',0.8));
+var validation = trainingData.filter(ee.Filter.greaterThanOrEquals('random',0.8));
+
+var classifier = ee.Classifier.smileCart().train(trainSet,label,bands);
+
+var classified = input.classify(classifier);
+print (classified.getInfo());
+
+var landcoverPalette = ['#0156d4','#51ff02','#f8330f','#02c256','#2b8144','#fffd23','#ffaf72'];
+Map.addLayer(classified,{palette:landcoverPalette,min:1,max:7},'CART');
+
+var trainingAccuracy = classifier.confusionMatrix().accuracy();
+print('training accuracy,confusion matrix',trainingAccuracy);
+
+var testingAccuracy = validation.classify(classifier).errorMatrix('class','classification').accuracy();
+print('testingAccuracy',ee.Number(testingAccuracy));
+
+
+
+Export.image.toDrive({
+  image: classified,
+  description: 'Landsat_8_Classifed_CART',
+  scale:10,
+  
+});
