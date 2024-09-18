@@ -1,0 +1,59 @@
+//This is Avni from Alpha Map Tech
+// Welcome to GEE session on "Daily Mean NO₂ Concentration in Chennai (May 2024)"
+// Import study area for Chennai
+var chennai = ee.FeatureCollection("FAO/GAUL/2015/level2")
+  .filter(ee.Filter.eq('ADM2_NAME', 'Chennai'));
+
+// Add Chennai boundary to the map
+Map.addLayer(chennai, {}, 'Chennai Boundary');
+
+// Import NO2 data from Sentinel-5P
+var NO2 = ee.ImageCollection("COPERNICUS/S5P/NRTI/L3_NO2")
+  .select('NO2_column_number_density')
+  .filterDate('2024-05-01', '2024-05-31');
+
+// Visualization parameters for NO2
+var visu = {
+  min: 0,
+  max: 0.0002,
+  palette: ['black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red']
+};
+
+// Calculate the daily mean NO2 concentration for the study area
+var dailyMeanNO2 = NO2.map(function(image) {
+  var mean = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: chennai.geometry(),
+    scale: 1000,
+    maxPixels: 1e13
+  }).get('NO2_column_number_density');
+  
+  return ee.Feature(null, {
+    'date': image.date().format('YYYY-MM-dd'),
+    'mean': mean
+  });
+});
+
+// Convert the results to a feature collection
+var dailyMeanNO2Collection = ee.FeatureCollection(dailyMeanNO2).filter(ee.Filter.notNull(['mean']));
+
+// Create a time series chart of the daily NO2 mean
+var chart = ui.Chart.feature.byFeature(dailyMeanNO2Collection, 'date', 'mean')
+  .setOptions({
+    title: 'Daily Mean NO₂ Concentration in Chennai (May 2024)',
+    hAxis: {title: 'Date'},
+    vAxis: {title: 'NO₂ Concentration (mol/m²)'},
+    lineWidth: 1,
+    pointSize: 3
+  });
+
+// Print the chart to the console
+print(chart);
+
+// Add the NO2 layer to the map
+var NO2_mean = NO2.mean().clip(chennai);
+Map.addLayer(NO2_mean, visu, 'S5P NO2');
+
+// Set the map center to Chennai
+Map.setCenter(80.27, 13.08, 10);
+
