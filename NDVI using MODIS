@@ -1,0 +1,42 @@
+//This is Avni from Alpha Map Tech 
+//for any queries contact avni22911119@gmail.com
+//Welcome to GEE session on NDVI from 2014 to 2023 using MODIS
+
+// Load the Country feature collection and filter for 'Ganjam'
+var Country = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+  .filter(ee.Filter.eq('ADM2_NAME', 'Ganjam'));
+Map.addLayer(Country, {}, 'Ganjam');
+
+// Define the date range for 10 years
+var startYear = 2014;
+var endYear = 2023;
+var years = ee.List.sequence(startYear, endYear);
+
+// Function to calculate and add NDVI layer for a given year
+var addNDVILayer = function(year) {
+  var startDate = ee.Date.fromYMD(year, 1, 1);
+  var endDate = ee.Date.fromYMD(year, 12, 31);
+  
+  var MODIS = ee.ImageCollection("MODIS/006/MOD13Q1")
+    .filter(ee.Filter.date(startDate, endDate))
+    .filter(ee.Filter.bounds(Country))
+    .select('NDVI')
+    .mean()
+    .clip(Country)
+    .multiply(0.0001); // Scaling factor for MODIS NDVI
+    
+  // Visualization parameters
+  var VisParams = {
+    min: 0.0,
+    max: 0.8,
+    palette: ['white', 'green']
+  };
+  
+  // Add the NDVI layer to the map
+  Map.addLayer(MODIS, VisParams, 'NDVI (' + year + ')');
+};
+
+// Map the function over the years to add each year's NDVI layer to the map
+years.getInfo().forEach(function(year) {
+  addNDVILayer(year);
+});
