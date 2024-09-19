@@ -1,5 +1,8 @@
 //This is Avni from Alpha Map Tech 
 //for any queries contact alphamaptech@gmail.com or avni22911119@gmail.com
+// Welcome to GEE session on landsat, Sentinel, MODIS_NDVI_Timeseries Chart
+
+
 // Welcome to GEE session on landsat_NDVI_Timeseries Chart
 
 // Define the region of interest
@@ -78,3 +81,82 @@ var NDVI_Visualise = {
   palette: ['white', 'green']
 };
 Map.addLayer(landsat.select('NDVI').median().clip(Country), NDVI_Visualise, 'NDVI');
+.................................................................................
+
+// Welcome to GEE session on Sentinel_NDVI_Timeseries Chart
+// Define the region of interest
+var Country = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+  .filter(ee.Filter.eq('ADM2_NAME', 'Ganjam'));
+Map.addLayer(Country);
+
+// Define the time range
+var startDate = '2023-01-01';
+var endDate = '2023-12-31';
+
+// Load Sentinel-2 data
+var Sentinel = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+  .filter(ee.Filter.date(startDate, endDate))
+  .filter(ee.Filter.bounds(Country))
+  .map(function(image) {
+    var ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI');
+    return image.addBands(ndvi);
+  });
+
+// Function to calculate monthly NDVI
+var monthlyNDVI = ee.List.sequence(1, 12).map(function(month) {
+  var start = ee.Date.fromYMD(2023, month, 1);
+  var end = start.advance(1, 'month');
+  var monthlyComposite = Sentinel.filterDate(start, end)
+    .median()
+    .clip(Country);
+  var ndvi = monthlyComposite.select('NDVI')
+    .reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: Country,
+      scale: 30,
+      bestEffort: true
+    }).get('NDVI');
+  return ee.Feature(null, {
+    'month': month,
+    'NDVI': ndvi
+  });
+});
+
+// Convert to a FeatureCollection
+var monthlyNDVIFeatures = ee.FeatureCollection(monthlyNDVI);
+
+// Print the time series to the console
+print('Monthly NDVI Time Series:', monthlyNDVIFeatures);
+
+// Define charting parameters
+var chart = ui.Chart.feature.byFeature(monthlyNDVIFeatures, 'month', 'NDVI')
+  .setChartType('LineChart')
+  .setOptions({
+    title: 'Monthly NDVI Time Series for Ganjam',
+    vAxis: {title: 'NDVI'},
+    hAxis: {title: 'Month'},
+    lineWidth: 2,
+    pointSize: 4,
+    series: {
+      0: {color: 'green'}
+    }
+  });
+
+// Display the chart in the console
+print(chart);
+
+// Visualization parameters for the Sentinel-2 image
+var Vis = {
+  bands: ['B4', 'B3', 'B2'],
+  min: 0.0,
+  max: 2000,
+};
+Map.addLayer(Sentinel.median().clip(Country), Vis, 'True Color');
+
+// Visualization parameters for the NDVI
+var NDVI_Visualise = {
+  min: 0,
+  max: 0.8,
+  palette: ['white', 'green']
+};
+Map.addLayer(Sentinel.select('NDVI').median().clip(Country), NDVI_Visualise, 'NDVI');
