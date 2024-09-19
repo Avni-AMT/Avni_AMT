@@ -1,0 +1,67 @@
+//This is Avni from Alpha Map Tech 
+//for any queries contact alphamaptech@gmail.com or avni22911119@gmail.com
+// Welcome to GEE session on GSMaP Operational Daily Precipitation of Wayand
+// GSMaP Operational Daily Precipitation from July 25 to August 2, 2024
+
+// Define the study area
+var study_area = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+  .filter(ee.Filter.eq('ADM2_NAME', 'Wayanad'));
+Map.addLayer(study_area, {}, 'Study Area');
+Map.centerObject(study_area, 10);
+
+// Define date range
+var startDate = '2024-07-25';
+var endDate = '2024-08-02';
+
+// Load GSMaP Operational: Global Satellite Mapping of  Precipitation
+var precipitation = ee.ImageCollection("JAXA/GPM_L3/GSMaP/v6/operational")
+  .select('hourlyPrecipRate')  // Make sure the band name is correct
+  .filterBounds(study_area)
+  .filterDate(startDate, endDate);
+
+// Check if the collection is empty
+print('Is Collection Empty:', precipitation.size().eq(0));
+
+// Print the number of images in the collection
+print('Number of images in precipitation collection:', precipitation.size());
+
+// Print some sample images from the collection
+print('Sample Images:', precipitation.limit(5));
+
+// Function to calculate daily precipitation
+function addDailyPrecipitation(image) {
+  var date = image.date().format('YYYY-MM-dd');
+  var precip = image.reduceRegion({
+    reducer: ee.Reducer.sum(),
+    geometry: study_area,
+    scale: 5000,
+    maxPixels: 1e9
+  }).get('hourlyPrecipRate'); // Use the correct band name
+  
+  // Return feature with date and precipitation properties
+  return ee.Feature(null, {
+    'date': date,
+    'precipitation': precip
+  });
+}
+
+// Convert ImageCollection to a FeatureCollection of daily precipitation
+var dailyPrecipitation = precipitation.map(addDailyPrecipitation);
+
+// Flatten the FeatureCollection and extract data
+var featureList = dailyPrecipitation.toList(dailyPrecipitation.size());
+
+// Create a time series chart of daily precipitation
+var chart = ui.Chart.feature.byFeature(dailyPrecipitation, 'date', 'precipitation')
+  .setOptions({
+    title: 'Daily Precipitation from July 25 to August 2, 2024',
+    hAxis: {title: 'Date', format: 'yyyy-MM-dd', gridlines: {count: 10}},
+    vAxis: {title: 'Precipitation (mm)', minValue: 0},
+    lineWidth: 1,
+    pointSize: 3,
+    colors: ['#1f77b4'],
+    legend: {position: 'none'}
+  });
+
+// Print the chart
+print(chart);
