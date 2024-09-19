@@ -1,0 +1,88 @@
+//This is Avni from Alpha Map Tech 
+//for any queries contact avni22911119@gmail.com
+//Welcome to GEE on " Timeseries of VCI "
+
+// Define study area: Rajasthan
+var Country = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+  .filter(ee.Filter.eq('ADM1_NAME', 'Rajasthan'));
+// This line loads a FeatureCollection containing global administrative boundaries and filters it to keep only the features (regions) where the administrative name ('ADM1_NAME') is 'Rajasthan'.
+
+Map.addLayer(Country, {}, 'Rajasthan');
+// Adds the filtered Rajasthan boundary layer to the map for visualization. The second argument is an empty object for default visualization parameters, and the third argument is the layer name.
+
+Map.centerObject(Country, 6);
+// Centers the map view on the Rajasthan boundary with a zoom level of 6.
+
+
+// Define time range for analysis
+var startDate = '2013-01-01';
+var endDate = '2023-12-31';
+// Defines the start and end dates for the time period over which the analysis will be conducted.
+
+
+// Load MODIS NDVI data for the specified time range and region
+var MODIS_NDVI = ee.ImageCollection('MODIS/006/MOD13A1')
+  .filterDate(startDate, endDate) // Filters the MODIS NDVI image collection to include only images within the specified date range.
+  .select('NDVI') // Selects only the 'NDVI' band from the MODIS images.
+  .map(function(image) { return image.clip(Country); });
+// Clips each image in the collection to the Rajasthan boundary to ensure the analysis is confined to this area.
+
+
+// Calculate NDVI minimum and maximum values over the entire time period for VCI calculation
+var NDVImin = MODIS_NDVI.reduce(ee.Reducer.min());
+// Calculates the minimum NDVI value for each pixel across the entire time series.
+
+var NDVImax = MODIS_NDVI.reduce(ee.Reducer.max());
+// Calculates the maximum NDVI value for each pixel across the entire time series.
+
+
+// Function to calculate VCI using the expression for each image
+var calculateVCI = function(image) {
+  return image.expression(
+    '((NDVI - NDVImin) / (NDVImax - NDVImin)) * 100', { // Formula to calculate VCI.
+      'NDVI': image, // Current NDVI value
+      'NDVImin': NDVImin, // Minimum NDVI value
+      'NDVImax': NDVImax // Maximum NDVI value
+    }).set('system:time_start', image.get('system:time_start')); // Keeps the original timestamp of the image.
+};
+
+
+// Apply VCI calculation to each image in the collection
+var VCICollection = MODIS_NDVI.map(calculateVCI);
+// Maps the VCI calculation function over the entire NDVI image collection to create a new collection of VCI images.
+
+
+// Calculate monthly mean VCI
+var monthlyVCI = ee.ImageCollection(
+  ee.List.sequence(0, ee.Date(endDate).difference(ee.Date(startDate), 'month').subtract(1))
+    .map(function(monthOffset) {
+      var start = ee.Date(startDate).advance(monthOffset, 'month'); // Determines the start date for each month.
+      return VCICollection.filterDate(start, start.advance(1, 'month')).mean() // Filters the VCI collection to include only images from the current month and calculates the mean VCI for that month.
+        .set('system:time_start', start.millis()); // Sets the timestamp for the monthly VCI image to the start of the month.
+    })
+);
+// Creates a new image collection containing the mean VCI for each month by iterating over the date range month by month and calculating the average VCI.
+
+
+// Visualize the first monthly VCI image on the map
+Map.addLayer(monthlyVCI.first(), {min: 0, max: 100, palette: ['red', 'yellow', 'green']}, 'Monthly VCI');
+// Adds the first image from the monthly VCI collection to the map with specified visualization parameters (a color palette from red to green representing VCI values from 0 to 100).
+
+
+// Create and display a time series chart for VCI
+var vciChart = ui.Chart.image.series({
+  imageCollection: monthlyVCI,
+  region: Country,
+  reducer: ee.Reducer.mean(), // Computes the mean VCI over the entire region for each image.
+  scale: 5000 // Sets the scale (resolution) for the calculations to 5000 meters.
+}).setOptions({
+  title: 'Monthly VCI Time Series for Rajasthan',
+  vAxis: {title: 'VCI'}, // Sets the vertical axis label to 'VCI'.
+  hAxis: {title: 'Date', format: 'yyyy-MM'} // Sets the horizontal axis label to 'Date' and formats the date labels as 'yyyy-MM'.
+});
+// Creates a time series chart of the mean VCI for Rajasthan, showing how VCI changes over time.
+
+
+// Print the chart to the console
+print(vciChart);
+// Prints the VCI time series chart to the console for viewing.
