@@ -1,0 +1,72 @@
+//This is Avni from Alpha Map Tech 
+//for any queries contact alphamaptech@gmail.com or avni22911119@gmail.com
+// Welcome to GEE session on Vulnerable area of Flood
+
+// Define the study area: Assam state in India
+var State = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+  .filter(ee.Filter.eq('ADM1_NAME', 'Assam'));
+Map.addLayer(State);
+Map.centerObject(State, 7);
+
+// Calculate the total area of the region in square kilometers
+print('Total state Area (Sqkm)', State.geometry().area().divide(1000000).round());
+
+// Import elevation data
+var elevation = ee.Image("USGS/SRTMGL1_003").clip(State);
+Map.addLayer(elevation, {min: 0, max: 300, palette: ['blue', 'green', 'yellow', 'red']}, 'Elevation');
+
+// Import land cover data
+var landcover = ee.Image("ESA/WorldCover/v100/2020").clip(State);
+var landcoverVis = {min: 10, max: 100, palette: ['0000FF', '008000', '00FF00', 'FFBB22', 'FFFF4C', 'F096FF', 'FA0000', 'B4B4B4', 'f8fcff']};
+Map.addLayer(landcover, landcoverVis, 'Land Cover');
+
+// Import population density data from WorldPop
+var population = ee.ImageCollection("WorldPop/GP/100m/pop")  // Using WorldPop dataset
+  .filterBounds(State)
+  .filterDate('2020-01-01', '2020-12-31')
+  .select('population')
+  .median()
+  .clip(State);
+var populationVis = {min: -4.167643148361587, max: 11.190865613347995, palette: ['blue', 'green', 'yellow', 'red']};
+Map.addLayer(population, populationVis, 'Population Density');
+
+// Calculate slope from elevation
+var slope = ee.Terrain.slope(elevation);
+Map.addLayer(slope, {min: 0, max: 60, palette :['green', 'yellow', 'red', 'white']}, 'Slope');
+
+// Define thresholds for vulnerability factors
+var lowElevation = elevation.lt(50); // Areas with elevation less than 50 meters
+var low_elevation_mask = lowElevation.updateMask(lowElevation.eq(1));
+var highPopulation = population.gt(5); // Areas with population density greater than 5 people per sq.km
+var  highPopulation_mask = highPopulation.updateMask(highPopulation.eq(1));
+var gentleSlope = slope.lt(5); // Areas with slope less than 5 degrees
+var  gentleSlope_mask = gentleSlope.updateMask(gentleSlope.eq(1));
+// Visualize each vulnerability factor separately
+Map.addLayer(low_elevation_mask, {palette: ['blue']}, 'Low Elevation Areas');
+Map.addLayer(highPopulation_mask, {palette: ['white']}, 'High Population Density Areas');
+Map.addLayer(gentleSlope_mask, {palette: ['yellow']}, 'Gentle Slope Areas');
+
+// Combine factors to identify vulnerable areas
+var vulnerableAreas = lowElevation.and(highPopulation).and(gentleSlope);
+// Mask vulnerable areas
+var vulnerableMask = vulnerableAreas.updateMask(vulnerableAreas.eq(1));
+Map.addLayer(vulnerableMask, {palette: ['red']}, 'Vulnerable Areas');
+
+// Calculate vulnerable area
+var vulnerable_area = vulnerableMask.multiply(ee.Image.pixelArea().divide(1e6));
+var vulnerable_area_sum = vulnerable_area.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: State,
+  scale: 30,
+  maxPixels: 1e8,
+  bestEffort: true
+}).values().get(0);
+
+print('Vulnerable Area (sq.km)', ee.Number(vulnerable_area_sum).round());
+
+
+Output :
+Total state Area (Sqkm)
+77964
+Vulnerable Area (sq.km)
+6762
