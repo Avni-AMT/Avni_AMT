@@ -1,0 +1,64 @@
+//This is Avni from Alpha Map Tech 
+//for any queries contact alphamaptech@gmail.com or avni22911119@gmail.com
+// Welcome to GEE session on Wayand_landslide
+
+// Define the study area
+var study_area = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+  .filter(ee.Filter.eq('ADM2_NAME', 'Wayanad'));
+Map.addLayer(study_area);
+Map.centerObject(study_area, 10);
+
+// Area of the region in SqKm
+print('Total area (ha)', study_area.geometry().area().divide(10000).round());
+
+// Speckle filter function
+function speckle(img) {
+  return img.focalMedian(5, 'square', 'meters')
+    .copyProperties(img, img.propertyNames());
+}
+
+// Import Sentinel 1 Landslide before event
+var before_landslide = ee.ImageCollection("COPERNICUS/S1_GRD")
+  .filter(ee.Filter.date('2024-06-01', '2024-06-30')) // Adjust date range as needed
+  .filter(ee.Filter.bounds(study_area))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+  .filter(ee.Filter.eq('instrumentMode', 'IW'))
+  .select('VV')
+  .map(speckle)
+  .median()
+  .clip(study_area);
+Map.addLayer(before_landslide, {min: -25, max: 5}, 'Before Landslide');
+
+// Import Sentinel 1 Landslide after event
+var after_landslide = ee.ImageCollection("COPERNICUS/S1_GRD")
+  .filter(ee.Filter.date('2024-07-30', '2024-08-08')) // Adjust date range as needed
+  .filter(ee.Filter.bounds(study_area))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+  .filter(ee.Filter.eq('instrumentMode', 'IW'))
+  .select('VV')
+  .map(speckle)
+  .median()
+  .clip(study_area);
+Map.addLayer(after_landslide, {min: -25, max: 5}, 'After Landslide');
+
+// Calculate the difference
+var difference = after_landslide.subtract(before_landslide);
+Map.addLayer(difference, {min: -10, max: 10}, 'Difference');
+
+// Apply a threshold to detect significant changes (updated threshold based on observations)
+var threshold = -5.0; // Adjusted threshold value to detect affected areas
+var affected_area = difference.lt(threshold).selfMask();
+
+// Calculate the area affected
+var affected_area_sum = affected_area.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: study_area,
+  scale: 10,
+  maxPixels: 1e9
+});
+
+print('Affected area (ha)', ee.Number(affected_area_sum.get('VV')).divide(10000));
+
+// Display affected area
+Map.addLayer(affected_area, {palette: 'red'}, 'Affected Area');
+
