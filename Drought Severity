@@ -1,0 +1,89 @@
+//This is Avni from Alpha Map Tech 
+//for any queries contact avni22911119@gmail.com
+// welcome to GEE session on droughtSeverity
+
+// Define study area
+var Country = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+  .filter(ee.Filter.eq('ADM1_NAME', 'Rajasthan'));
+Map.addLayer(Country, {}, 'Rajasthan');
+
+// Load and process MODIS NDVI dataset
+var modisNDVI = ee.ImageCollection("MODIS/061/MOD13Q1")
+  .filterDate('2020-01-01', '2020-12-31')
+  .select('NDVI')
+  .median()
+  .clip(Country);
+Map.addLayer(modisNDVI, {min: -2000, max: 5000, palette: ['white', 'green']}, 'MODIS NDVI');
+
+// Load and process MODIS LST dataset
+var modisLST = ee.ImageCollection("MODIS/061/MOD21C2")
+  .filterDate('2020-01-01', '2020-12-31')
+  .select('LST_Day')
+  .median()
+  .clip(Country);
+Map.addLayer(modisLST, {min: 304.1228315770406, max: 328.2030381673946, palette: ['green', 'yellow', 'orange', 'red']}, 'MODIS LST');
+
+// Calculate NDVI min and max
+var NDVImin = modisNDVI.reduceRegion({
+  reducer: ee.Reducer.min(),
+  geometry: Country,
+  scale: 500,
+  maxPixels: 1e9
+}).get('NDVI');
+
+var NDVImax = modisNDVI.reduceRegion({
+  reducer: ee.Reducer.max(),
+  geometry: Country,
+  scale: 500,
+  maxPixels: 1e9
+}).get('NDVI');
+
+// Calculate VCI
+var VCI = modisNDVI.expression(
+  '((NDVI - NDVImin) / (NDVImax - NDVImin)) * 100', {
+    'NDVI': modisNDVI,
+    'NDVImin': ee.Number(NDVImin),
+    'NDVImax': ee.Number(NDVImax)
+  }
+);
+Map.addLayer(VCI, {min: 0, max: 100, palette: ['red', 'yellow', 'green']}, 'VCI');
+
+// Calculate LST min and max
+var LSTmin = modisLST.reduceRegion({
+  reducer: ee.Reducer.min(),
+  geometry: Country,
+  scale: 500,
+  maxPixels: 1e9
+}).get('LST_Day');
+
+var LSTmax = modisLST.reduceRegion({
+  reducer: ee.Reducer.max(),
+  geometry: Country,
+  scale: 500,
+  maxPixels: 1e9
+}).get('LST_Day');
+
+// Calculate TCI
+var TCI = modisLST.expression(
+  '((LSTmax - LST) / (LSTmax - LSTmin)) * 100', {
+    'LST': modisLST,
+    'LSTmin': ee.Number(LSTmin),
+    'LSTmax': ee.Number(LSTmax)
+  }
+);
+Map.addLayer(TCI, {min: 0, max: 100, palette: ['red', 'yellow', 'green']}, 'TCI');
+
+// Assume VCI and TCI are defined as ee.Image objects.
+var DSI = VCI.add(TCI).divide(2);
+Map.addLayer(DSI, {min: 0, max: 100, palette: ['red', 'yellow', 'green']}, 'DSI');
+
+// Recode and classify drought severity
+var droughtSeverity = DSI.expression(
+  'b(0) < 20 ? 4 : (b(0) < 40 ? 3 : (b(0) < 60 ? 2 : (b(0) < 80 ? 1 : 0)))',
+  {}
+).rename('droughtSeverity').clip(Country);
+
+Map.addLayer(droughtSeverity, {
+  min: 0, max: 4,
+  palette: ['green', 'yellow', 'orange', 'red', 'darkred']
+}, 'Drought Severity');
